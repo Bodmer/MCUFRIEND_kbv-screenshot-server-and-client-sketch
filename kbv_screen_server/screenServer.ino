@@ -15,7 +15,7 @@
 #define PIXEL_TIMEOUT 100    // 100ms Time-out between pixel requests
 #define START_TIMEOUT 20000  // 20s Maximum time to wait for start of transfer
 
-#define NPIXELS 4 // Number of pixels to send in a burst (minimum or 1) must be integer division of tft width
+#define NPIXELS 4 // Number of pixels to send in a burst (minimum of 1) must be integer division of tft width
 
 // Start a screen dump server (serial or network)
 boolean screenServer(void)
@@ -51,7 +51,7 @@ boolean serialScreenServer(void)
     if (SerialUSB.available() > 0) {
       // Read the command byte
       uint8_t cmd = SerialUSB.read();
-      // If it is 'S' (start command) then clear the serial buffer for 100ms and stop waiting
+      // If it is 'S' (start command) then clear the serial buffer for 50ms and stop waiting
       if ( cmd == 'S' ) {
         // Precautionary receive buffer garbage flush for 50ms
         clearTime = millis() + 50;
@@ -80,10 +80,10 @@ boolean serialScreenServer(void)
 
   uint16_t color[NPIXELS]; // 565 color buffer for N pixels
 
-  // Send all the pixels on the whole screen (typically 5 seconds at 921600 baud)
+  // Send all the pixels on the whole screen
   for ( uint32_t y = 0; y < tft.height(); y++)
   {
-    // Increment x by 2 as we send 2 pixels for every byte received
+    // Increment x by NPIXELS as we send NPIXELS for every byte received
     for ( uint32_t x = 0; x < tft.width(); x += NPIXELS)
     {
       // Wait here for serial data to arrive or a time-out elapses
