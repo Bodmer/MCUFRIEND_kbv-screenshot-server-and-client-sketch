@@ -64,9 +64,12 @@ int max_images = 12; // Maximum of numbered saved images before over-writing fil
 
 int serialCount = 0;    // Count of colour bytes arriving
 
-int bgcolor = 255;			// Background color
+color bgcolor1 = color(0, 100, 104);			// Background colors
+//color bgcolor2 = color(23, 161, 165);
+color bgcolor2 = color(77, 183, 187);
+//color bgcolor2 = color(255, 255, 255);
 
-PImage bg_img;
+color frameColor = 42;
 
 int[] rgb = new int[6]; // Buffer for the RGB colour bytes
 int indexRed   = 0;     // Colour byte index in the array
@@ -96,13 +99,8 @@ void setup() {
   size(500, 540);  // Stage size, can handle 480 pixels wide screen
   noStroke();      // No border on the next thing drawn
 
-  // Graded background image
-  bg_img = createImage(500, 540, ARGB);
-  for (int i = 0; i < bg_img.pixels.length; i++) {
-    float a = map(i, 0, bg_img.pixels.length, 255, 0);
-    bg_img.pixels[i] = color(0, 100, 104, a);
-  }
-
+  // Graded background
+  drawWindow();
 
   frameRate(5000); // High frame rate so draw() loops fast
 
@@ -126,27 +124,18 @@ void setup() {
 
   serial = new Serial(this, portName, serial_baud_rate);
 
-  fill(0);
-  text("Bodmer's TFT image viewer", width/2, height-10);
-
   noSmooth();      // Turn off anti-aliasing to avoid adjacent pixel merging
 
   state = 99;
 }
 
 void draw() {
-  drawLoopCount++;
   switch(state) {
 
   case 0: // Init varaibles, send start request
     tint(0, 0, 0, 255);
+    flushBuffer();
     println("");
-    //println("Clearing pipe...");
-    beginTime = millis() + 200;
-    while ( millis() < beginTime ) 
-    {
-      serial.read();
-    }
     print("Ready: ");
 
     xpos = 0;
@@ -155,13 +144,14 @@ void draw() {
     progress_bar = 0;
     pixel_count = 0;
     percentage   = 0;
-    drawLoopCount = 0;
+    drawLoopCount = frameCount;
     lastPixelTime = millis() + 1000;
+
     state = 1;
     break;
 
   case 1: // Console message, give server some time
-    print("requesting image size ");
+    print("requesting image ");
     serial.write("S");
     delay(10);
     beginTime = millis() + 1000;
@@ -169,179 +159,40 @@ void draw() {
     break;
 
   case 2: // Get size and set start time for render time report
-    // To do: Read image size info, currently hard coded
     if (millis() > beginTime) {
       System.err.println(" - no response!");
       state = 0;
     }
-    if ( serial.available() > 6 ) {
-      println();
-      char code = (char)serial.read();
-      if (code == 'W') {
-        tft_width = serial.read()<<8 | serial.read();
-      }
-      code = (char)serial.read();
-      if (code == 'H') {
-        tft_height = serial.read()<<8 | serial.read();
-      }
-      code = (char)serial.read();
-      if (code == 'Y') {
-        textAlign(CENTER);
-        textSize(20);
-        background(bgcolor);
-        image(bg_img, 0, 0);
-
-        fill(0);
-        text("Bodmer's TFT image viewer", width/2, height-10);
-
-        x_offset = (500 - tft_width) /2;
-        tint(0, 0, 0, 255);
-        noStroke();
-        fill(50);
-        rect((width - tft_width)/2 - border, y_offset - border, tft_width + 2 * border, tft_height + 2 * border);
-        //fill(50);
-        //rect( (width - tft_width)/2, y_offset, tft_width-1, tft_height-1);
-
-        beginTime = millis();
-        state = 3;
-      }
+    if ( getSize() == true ) {
+      beginTime = millis();
+      state = 3;
     }
-
-    noTint();
+    //noTint();
     break;
 
   case 3: // Request pixels and render returned RGB values
-
-    if ( serial.available() > 0 ) {
-
-      // Add the latest byte from the serial port to array:
-      while (serial.available()>0)
-      {
-        rgb[serialCount++] = serial.read();
-
-        // If we have 3 colour bytes:
-        if ( serialCount >= color_bytes ) {
-          serialCount = 0;
-          pixel_count++;
-          if (color_bytes == 3)
-          {
-            stroke(rgb[indexRed], rgb[indexGreen], rgb[indexBlue], 1000);
-          } else
-          {
-            //stroke( (rgb[1] & 0x1F)<<3, (rgb[1] & 0xE0)>>3 | (rgb[0] & 0x07)<<5, (rgb[0] & 0xF8));
-            stroke( (rgb[1] & 0xF8), (rgb[0] & 0xE0)>>3 | (rgb[1] & 0x07)<<5, (rgb[0] & 0x1F)<<3);
-          }
-          // We get some pixel merge aliasing if smooth() is defined, so draw pixel twice
-          point(xpos + x_offset, ypos + y_offset);
-          //point(xpos + x_offset, ypos + y_offset);
-
-          lastPixelTime = millis();
-          xpos++;
-          if (xpos >= tft_width) {
-            xpos = 0; 
-            print(".");
-            progress_bar++;
-            if (progress_bar >31)
-            {
-              progress_bar = 0;
-              percentage = 0.5 + 100 * pixel_count/(0.001 + tft_width * tft_height);
-              if (percentage > 100) percentage = 100;
-              println(" [ " + (int)percentage + "% ]");
-              textAlign(LEFT);
-              textSize(16);
-              noStroke();
-              fill(255);
-              rect(10, height - 28, 70, 20);
-              fill(0);
-              text(" [ " + (int)percentage + "% ]", 10, height-12);
-            }
-            ypos++;
-            if (ypos>=tft_height) { 
-              ypos = 0;
-              noStroke();
-              fill(255);
-              rect(10, height - 28, 70, 20);
-              fill(0);
-              text(" [ " + 100 + "% ]", 10, height-12);
-              if ((int)percentage <100) println(" [ " + 100 + "% ]");
-              println("Image fetch time = " + (millis()-beginTime)/1000.0 + " s");
-              state = 5;
-            }
-          }
-        }
-      }
-    } else
-    {
-      if (millis() > (lastPixelTime + pixelWaitTime))
-      {
-        println("");
-        System.err.println("No response, trying again...");
-        state = 4;
-      }
-    }
-    // Request 32pixels
+    state = renderPixels();
+    // Request 32 more pixels
     serial.write("RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR");
     break;
 
   case 4: // Time-out, flush serial buffer
-    println();
-    //println("Clearing serial pipe after a time-out");
-    int clearTime = millis() + 50;
-    while ( millis() < clearTime ) 
-    {
-      serial.read();
-    }
+    flushBuffer();
     state = 6;
     break;
 
   case 5: // Save the image to the sketch folder (Ctrl+K to access)
-    println();
-    String filename = "tft_screen_" + n  + image_type;
-    println("Saving image as \"" + filename);
-    if (save_border)
-    {
-      PImage partialSave = get(x_offset - border, y_offset - border, tft_width + 2*border, tft_height + 2*border);
-      partialSave.save(filename);
-    } else {
-      PImage partialSave = get(x_offset, y_offset, tft_width, tft_height);
-      partialSave.save(filename);
-    }
-
-    n = n + 1;
-    if (n>=max_images) n = 0;
-    drawLoopCount = 0; // Reset value ready for counting in step 6
+    saveScreenshot();
+    drawLoopCount = frameCount; // Reset value ready for counting in step 6
     state = 6;
     break;
 
   case 6: // Fade the old image if enabled
-    int opacity = drawLoopCount;  // So we get increasing fade
-    if (drawLoopCount > 50)       // End fade after 50 cycles
-    {
-      opacity = 255;
-      state = 0;
-    }
-    delay(10);
-    if (fade)
-    {
-      tint(255, opacity);
-      //image(tft_img, x_offset, y_offset);
-      noStroke();
-      fill(50, 50, 50, opacity);
-      rect( (width - tft_width)/2, y_offset, tft_width, tft_height);
-    }
-
+    if ( fadedImage() == true ) state = 0;
     break;
 
   case 99: // Draw image viewer window
-    textAlign(CENTER);
-    textSize(20);
-    background(bgcolor);
-    image(bg_img, 0, 0);
-
-    fill(0);
-
-    text("Bodmer's TFT image viewer", width/2, height-10);
-
+    drawWindow();
     state = 0;
     break;
 
@@ -350,4 +201,176 @@ void draw() {
     System.err.println("Error state reached - check sketch!");
     break;
   }
+}
+
+void drawWindow()
+{
+  // Graded background in Arduino colours
+  for (int i = 0; i < height - 25; i++) {
+    float inter = map(i, 0, height - 25, 0, 1);
+    color c = lerpColor(bgcolor1, bgcolor2, inter);
+    stroke(c);
+    line(0, i, 500, i);
+  }
+  fill(bgcolor2);
+  rect( 0, height-25, width-1, 24);
+  textAlign(CENTER);
+  textSize(20);
+  fill(0);
+  text("Bodmer's TFT image viewer", width/2, height-6);
+}
+
+void flushBuffer()
+{
+  println();
+  //println("Clearing serial pipe after a time-out");
+  int clearTime = millis() + 50;
+  while ( millis() < clearTime ) 
+  {
+    serial.read();
+  }
+}
+
+boolean getSize()
+{
+  if ( serial.available() > 6 ) {
+    println();
+    char code = (char)serial.read();
+    if (code == 'W') {
+      tft_width = serial.read()<<8 | serial.read();
+    }
+    code = (char)serial.read();
+    if (code == 'H') {
+      tft_height = serial.read()<<8 | serial.read();
+    }
+    code = (char)serial.read();
+    if (code == 'Y') {
+      drawWindow();
+
+      x_offset = (500 - tft_width) /2;
+      tint(0, 0, 0, 255);
+      noStroke();
+      fill(frameColor);
+      rect((width - tft_width)/2 - border, y_offset - border, tft_width + 2 * border, tft_height + 2 * border);
+      return true;
+    }
+  }
+  return false;
+}
+
+int renderPixels()
+{
+  if ( serial.available() > 0 ) {
+
+    // Add the latest byte from the serial port to array:
+    while (serial.available()>0)
+    {
+      rgb[serialCount++] = serial.read();
+
+      // If we have 3 colour bytes:
+      if ( serialCount >= color_bytes ) {
+        serialCount = 0;
+        pixel_count++;
+        if (color_bytes == 3)
+        {
+          stroke(rgb[indexRed], rgb[indexGreen], rgb[indexBlue], 1000);
+        } else
+        {
+          //stroke( (rgb[1] & 0x1F)<<3, (rgb[1] & 0xE0)>>3 | (rgb[0] & 0x07)<<5, (rgb[0] & 0xF8));
+          stroke( (rgb[1] & 0xF8), (rgb[0] & 0xE0)>>3 | (rgb[1] & 0x07)<<5, (rgb[0] & 0x1F)<<3);
+        }
+        // We get some pixel merge aliasing if smooth() is defined, so draw pixel twice
+        point(xpos + x_offset, ypos + y_offset);
+        //point(xpos + x_offset, ypos + y_offset);
+
+        lastPixelTime = millis();
+        xpos++;
+        if (xpos >= tft_width) {
+          xpos = 0; 
+          progressBar();
+          ypos++;
+          if (ypos>=tft_height) {
+            ypos = 0;
+            if ((int)percentage <100) {
+              percent(100);
+              println(" [ " + 100 + "% ]");
+            }
+            println("Image fetch time = " + (millis()-beginTime)/1000.0 + " s");
+            return 5;
+          }
+        }
+      }
+    }
+  } else
+  {
+    if (millis() > (lastPixelTime + pixelWaitTime))
+    {
+      println("");
+      System.err.println("No response, trying again...");
+      return 4;
+    }
+  }
+  return 3;
+}
+
+void progressBar()
+{
+  progress_bar++;
+  print(".");
+  if (progress_bar >31)
+  {
+    progress_bar = 0;
+    percentage = 0.5 + 100 * pixel_count/(0.001 + tft_width * tft_height);
+    percent(percentage);
+  }
+}
+
+void percent(float percentage)
+{
+  if (percentage > 100) percentage = 100;
+  println(" [ " + (int)percentage + "% ]");
+  textAlign(LEFT);
+  textSize(16);
+  noStroke();
+  fill(bgcolor2);
+  rect(10, height - 25, 70, 20);
+  fill(0);
+  text(" [ " + (int)percentage + "% ]", 10, height-8);
+}
+
+void saveScreenshot()
+{
+  println();
+  String filename = "tft_screen_" + n  + image_type;
+  println("Saving image as \"" + filename);
+  if (save_border)
+  {
+    PImage partialSave = get(x_offset - border, y_offset - border, tft_width + 2*border, tft_height + 2*border);
+    partialSave.save(filename);
+  } else {
+    PImage partialSave = get(x_offset, y_offset, tft_width, tft_height);
+    partialSave.save(filename);
+  }
+
+  n = n + 1;
+  if (n>=max_images) n = 0;
+}
+
+boolean fadedImage()
+{
+  int opacity = frameCount - drawLoopCount;  // So we get increasing fade
+  if (fade)
+  {
+    tint(255, opacity);
+    //image(tft_img, x_offset, y_offset);
+    noStroke();
+    fill(50, 50, 50, opacity);
+    rect( (width - tft_width)/2, y_offset, tft_width, tft_height);
+    delay(10);
+  }
+  if (opacity > 50)       // End fade after 50 cycles
+  {
+    return true;
+  }
+  return false;
 }
